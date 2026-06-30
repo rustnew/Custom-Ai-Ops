@@ -1,0 +1,44 @@
+{{- if and .Values.model.seedImage .Values.model.seedCommand .Values.persistenceRWX.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-seed-{{ .Release.Revision | default 1 }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: model-seed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "model-serving-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: model-seed
+    spec:
+      restartPolicy: OnFailure
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: seed
+          image: {{ .Values.model.seedImage }}
+          imagePullPolicy: {{ .Values.model.seedImagePullPolicy }}
+          command:
+            {{- toYaml .Values.model.seedCommand | nindent 12 }}
+          env:
+            - name: MODEL_NAME
+              value: {{ .Values.model.name | quote }}
+            - name: MODEL_DEST_PATH
+              value: "/models/{{ .Values.model.name }}"
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: {{ include "model-serving-engine.fullname" . }}-rwx
+{{- end }}

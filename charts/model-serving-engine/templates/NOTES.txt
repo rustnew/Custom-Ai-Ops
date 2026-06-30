@@ -1,0 +1,13 @@
+Model Serving Engine
+====================
+
+The {{ .Values.engine.type }} engine is serving model {{ .Values.model.name }}.
+
+Release : {{ .Release.Name }}
+Namespace: {{ .Values.global.namespace }}
+
+Connection:
+  export MODEL_URL=http://{{ include "model-serving-engine.fullname" . }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.service.port }}/v1/chat/completions
+
+Health:
+  curl http://{{ include "model-serving-engine.fullname" . }}.{{ .Values.global.namespace }}.svc.cluster.local:{{ .Values.service.port }}/health

@@ -1,0 +1,52 @@
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  hostname: inference.example.com
+  tlsSecret: inference-tls
+
+backends: []
+  # - name: llama3-8b-local
+  #   schema: OpenAI
+  #   prefix: /v1
+  #   hostname: model-serving-llamacpp.model-serving-prod.svc.cluster.local
+  #   port: 80
+  #   securityType: APIKey
+  #   tlsHostname: ""
+
+models: []
+  # - name: llama3-8b-local
+  #   displayName: "LLaMA 3 8B (self-hosted)"
+  #   contextLength: 8192
+  #   backends:
+  #     - ref: llama3-8b-local
+  #       priority: 0
+  #       weight: 100
+  #   fallback:
+  #     enabled: true
+  #     backendRef: openai-gpt4
+  #     latencyThreshold: 2000ms
+  #     errorThreshold: 0.05
+
+fallback: {}
+  # enabled: true
+  # saasBackends:
+  #   - name: openai-gpt4
+  #     endpoint: https://api.openai.com/v1
+  #     apiKeySecret: openai-api-key
+  #     priority: 1
+
+healthCheck:
+  interval: 10s
+  timeout: 2s
+  unhealthyThreshold: 3
+  healthyThreshold: 2
+  path: /health
+
+latency:
+  failoverThreshold: 2000ms
+  priorityRouting:
+    priorityZeroMaxConnections: 100
+    priorityOneMaxConnections: 200
+
+commonLabels: {}
+commonAnnotations: {}

@@ -1,0 +1,117 @@
+{
+  "dashboard": {
+    "title": "Model Serving Performance",
+    "tags": ["model-serving", "inference", "latency"],
+    "timezone": "utc",
+    "panels": [
+      {
+        "title": "Request Rate (req/s)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type)",
+            "legendFormat": "{{namespace}} {{engine_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "title": "P95 Latency (s)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"model-serving-engine\"}[5m])) by (le, namespace, engine_type))",
+            "legendFormat": "p95 {{namespace}} {{engine_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 2, "color": "yellow" },
+                { "value": 5, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Error Rate (%)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"model-serving-engine\",code=~\"5..\"}[5m])) by (namespace, engine_type) / sum(rate(http_requests_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type) * 100",
+            "legendFormat": "{{namespace}} {{engine_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 5, "color": "yellow" },
+                { "value": 15, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Tokens/Second Throughput",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "sum(rate(model_tokens_generated_total{job=\"model-serving-engine\"}[5m])) by (namespace, engine_type)",
+            "legendFormat": "{{namespace}} {{engine_type}}"
+          }
+        ]
+      },
+      {
+        "title": "Active Models per Pod",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 12, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "expr": "kube_statefulset_replicas{statefulset=~\"model-serving-.*\"}",
+            "legendFormat": "{{statefulset}}"
+          }
+        ]
+      },
+      {
+        "title": "OOM Kills",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 12, "x": 12, "y": 16 },
+        "targets": [
+          {
+            "expr": "increase(kube_pod_container_status_terminated_reason{reason=\"OOMKilled\",namespace=~\"model-serving.*\"}[1h])",
+            "legendFormat": "{{pod}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 1, "color": "red" }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

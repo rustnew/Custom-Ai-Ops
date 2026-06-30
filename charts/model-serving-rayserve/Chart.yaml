@@ -1,0 +1,12 @@
+apiVersion: v2
+name: model-serving-rayserve
+description: Helm chart for serving PyTorch models transitively with Ray Serve
+type: application
+version: 0.1.0
+appVersion: "2.38"
+dependencies:
+  - name: bjw-template
+    version: "0.1.0"
+    repository: "file://../bjw-template"
+maintainers:
+  - name: onnx-ai-helm

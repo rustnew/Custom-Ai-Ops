@@ -1,0 +1,48 @@
+{{- if and .Values.gateway .Values.backends }}
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}-health
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "ai-gateway.fullname" . }}
+  healthCheck:
+    type: HTTP
+    http:
+      path: {{ .Values.healthCheck.path }}
+      expectedResponses:
+        - statusCode: 200
+    interval: {{ .Values.healthCheck.interval }}
+    timeout: {{ .Values.healthCheck.timeout }}
+    unhealthyThreshold: {{ .Values.healthCheck.unhealthyThreshold }}
+    healthyThreshold: {{ .Values.healthCheck.healthyThreshold }}
+  circuitBreaker:
+    strategy: Prioritized
+    priorities:
+      - priority: 0
+        maxConnections: {{ .Values.latency.priorityRouting.priorityZeroMaxConnections }}
+        maxPendingRequests: 50
+        maxRequests: {{ .Values.latency.priorityRouting.priorityZeroMaxConnections }}
+        maxRetries: 3
+      - priority: 1
+        maxConnections: {{ .Values.latency.priorityRouting.priorityOneMaxConnections }}
+        maxPendingRequests: 100
+        maxRequests: {{ .Values.latency.priorityRouting.priorityOneMaxConnections }}
+        maxRetries: 3
+  retry:
+    codes:
+      - 502
+      - 503
+      - 504
+    attempts: 2
+    backoff: 500ms
+    perRetry:
+      timeout: 5s
+{{- end }}

@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+  annotations:
+    {{- include "model-serving-engine.annotations" . | nindent 4 }}
+spec:
+  serviceName: {{ include "model-serving-engine.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "model-serving-engine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-serving-engine.selectorLabels" . | nindent 8 }}
+        engine-type: {{ .Values.engine.type }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "model-serving-engine.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      initContainers:
+        {{- if and .Values.model.seedImage .Values.model.seedCommand }}
+        - name: model-seed
+          image: {{ .Values.model.seedImage }}
+          imagePullPolicy: {{ .Values.model.seedImagePullPolicy }}
+          command:
+            {{- toYaml .Values.model.seedCommand | nindent 12 }}
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+        {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- $img := (include "model-serving-engine.engineImage" . | fromJson) }}
+          {{- $command := (include "model-serving-engine.engineCommand" . | fromJson) }}
+          {{- $args := (include "model-serving-engine.engineArgs" . | fromJson) }}
+          {{- $resources := (include "model-serving-engine.engineResources" . | fromJson) }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.global.imageRegistry }}{{ if .Values.global.imageRegistry }}/{{ end }}{{ $img.repository }}:{{ $img.tag }}"
+          imagePullPolicy: {{ $img.pullPolicy }}
+          {{- if $command }}
+          command:
+            {{- toYaml $command | nindent 12 }}
+          {{- end }}
+          args:
+            {{- toYaml $args | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ include "model-serving-engine.enginePort" . }}
+              protocol: TCP
+          env:
+            - name: MODEL_NAME
+              value: {{ .Values.model.name | quote }}
+            {{- range .Values.extraEnv }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml $resources | nindent 12 }}
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+              readOnly: false
+            - name: tmp
+              mountPath: /tmp
+            {{- range .Values.extraVolumeMounts }}
+            - name: {{ .name }}
+              mountPath: {{ .mountPath }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
+              {{- end }}
+            {{- end }}
+          {{- $engineType := .Values.engine.type }}
+          {{- if eq $engineType "vllm" }}
+          livenessProbe:
+            {{- toYaml .Values.engine.vllm.livenessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.engine.vllm.startupProbe | nindent 12 }}
+          {{- else if eq $engineType "llamacpp" }}
+          livenessProbe:
+            {{- toYaml .Values.engine.llamacpp.livenessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.engine.llamacpp.startupProbe | nindent 12 }}
+          {{- else if eq $engineType "onnxGenai" }}
+          livenessProbe:
+            {{- toYaml .Values.engine.onnxGenai.livenessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.engine.onnxGenai.startupProbe | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- range .Values.extraVolumes }}
+        - name: {{ .name }}
+          {{- if .configMap }}
+          configMap:
+            name: {{ .configMap.name }}
+            {{- if .configMap.items }}
+            items:
+              {{- toYaml .configMap.items | nindent 14 }}
+            {{- end }}
+          {{- else if .secret }}
+          secret:
+            secretName: {{ .secret.secretName }}
+          {{- else if .emptyDir }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- if .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: model-storage
+        labels:
+          {{- include "model-serving-engine.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}

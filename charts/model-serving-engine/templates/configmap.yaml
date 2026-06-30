@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+data:
+  ENGINE_TYPE: {{ .Values.engine.type | quote }}
+  MODEL_NAME: {{ .Values.model.name | quote }}
+  {{- if eq .Values.engine.type "vllm" }}
+  VLLM_HOST: "0.0.0.0"
+  VLLM_PORT: "8000"
+  {{- else if eq .Values.engine.type "llamacpp" }}
+  LLAMACPP_HOST: "0.0.0.0"
+  LLAMACPP_PORT: "8080"
+  {{- else if eq .Values.engine.type "onnxGenai" }}
+  ONNX_GENAI_PORT: "8080"
+  {{- end }}

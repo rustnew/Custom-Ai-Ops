@@ -1,0 +1,8 @@
+apiVersion: v2
+name: ai-gateway
+description: Envoy AI Gateway configuration for OpenAI-compatible model federation with priority routing and failover
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: onnx-ai-helm

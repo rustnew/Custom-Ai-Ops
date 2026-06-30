@@ -1,0 +1,40 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: gpu-chaos
+  namespace: model-serving-prod
+spec:
+  appinfo:
+    appns: model-serving-prod
+    applabel: "app.kubernetes.io/name=model-serving-engine"
+    appkind: statefulset
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "15"
+            - name: FORCE
+              value: "false"
+    - name: pod-network-latency
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+            - name: NETWORK_LATENCY
+              value: "500"
+            - name: JITTER
+              value: "200"
+    - name: node-drain
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: NODE_LABEL
+              value: "nvidia.com/gpu=present"

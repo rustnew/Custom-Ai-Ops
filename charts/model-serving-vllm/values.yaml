@@ -1,0 +1,94 @@
+global:
+  namespace: model-serving
+
+engine:
+  type: vllm
+
+image:
+  repository: vllm/vllm-openai
+  tag: v0.6.3
+  pullPolicy: IfNotPresent
+
+command: []
+args:
+  - --model
+  - /models/$(MODEL_NAME)
+  - --tensor-parallel-size
+  - "1"
+  - --max-model-len
+  - "4096"
+  - --gpu-memory-utilization
+  - "0.90"
+
+model:
+  name: ""
+  volumeSize: 50Gi
+  seedImage: ""
+  seedImagePullPolicy: IfNotPresent
+  seedCommand: []
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 32Gi
+  requests:
+    cpu: "4"
+    memory: 16Gi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 60
+
+replicaCount: 1
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+persistenceRWX:
+  enabled: true
+  storageClass: longhorn-rwx
+  accessMode: ReadWriteMany
+  size: 50Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+topologySpreadConstraints: []

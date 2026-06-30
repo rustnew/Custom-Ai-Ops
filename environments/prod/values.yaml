@@ -1,0 +1,47 @@
+global:
+  namespace: model-serving-prod
+
+engine:
+  vllm:
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: 32Gi
+      requests:
+        cpu: "4"
+        memory: 16Gi
+
+replicaCount: 2
+
+persistence:
+  storageClass: longhorn
+  size: 100Gi
+
+persistenceRWX:
+  storageClass: longhorn-rwx
+  size: 100Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/gpu
+    operator: Exists
+    effect: NoSchedule
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: model-serving-engine

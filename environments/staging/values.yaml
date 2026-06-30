@@ -1,0 +1,27 @@
+global:
+  namespace: model-serving-staging
+
+engine:
+  vllm:
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: 24Gi
+      requests:
+        cpu: "4"
+        memory: 12Gi
+
+replicaCount: 1
+
+persistence:
+  storageClass: longhorn
+  size: 50Gi
+
+persistenceRWX:
+  storageClass: longhorn-rwx
+  size: 50Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2

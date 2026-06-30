@@ -1,0 +1,28 @@
+data:
+  resource.customizations: |
+    serving.kserve.io/InferenceService:
+      health.lua: |
+        hs = {}
+        if obj.status and obj.status.conditions then
+          for i, condition in ipairs(obj.status.conditions) do
+            if condition.type == "Ready" and condition.status == "True" then
+              hs.status = "Healthy"
+              return hs
+            end
+          end
+        end
+        hs.status = "Progressing"
+        hs.message = "InferenceService is not ready yet"
+        return hs
+    apps/v1.StatefulSet:
+      health.lua: |
+        hs = {}
+        if obj.status and obj.status.readyReplicas and obj.status.replicas then
+          if obj.status.readyReplicas >= obj.status.replicas then
+            hs.status = "Healthy"
+            return hs
+          end
+        end
+        hs.status = "Progressing"
+        hs.message = "StatefulSet is not ready"
+        return hs

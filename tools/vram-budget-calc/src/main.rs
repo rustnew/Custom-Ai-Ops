@@ -176,6 +176,14 @@ fn calculate_kv_cache_gb(batch: u32, context: u32, layers: u32, heads: u32, byte
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    if cli.total_vram <= 0.0 {
+        return Err(anyhow!("total VRAM must be positive"));
+    }
+
+    if cli.model_size < 0.0 {
+        return Err(anyhow!("model size cannot be negative"));
+    }
+
     let quant = QuantFormat::from_str(&cli.quant)?;
     let gpu_arch = cli
         .gpu
@@ -211,14 +219,6 @@ fn main() -> Result<()> {
             usable_vram,
             -remaining
         ));
-    }
-
-    if cli.total_vram <= 0.0 {
-        return Err(anyhow!("total VRAM must be positive"));
-    }
-
-    if cli.model_size < 0.0 {
-        return Err(anyhow!("model size cannot be negative"));
     }
 
     let budget = VramBudget {

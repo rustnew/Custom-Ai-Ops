@@ -1,0 +1,28 @@
+global:
+  namespace: model-serving-dev
+
+engine:
+  vllm:
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: 16Gi
+      requests:
+        cpu: "2"
+        memory: 8Gi
+
+replicaCount: 1
+
+persistence:
+  storageClass: local-path
+  size: 30Gi
+
+persistenceRWX:
+  storageClass: local-path
+  size: 30Gi
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false

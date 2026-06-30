@@ -1,0 +1,95 @@
+global:
+  namespace: model-serving
+
+engine:
+  type: llamacpp
+
+image:
+  repository: ghcr.io/ggerganov/llama.cpp
+  tag: server-b4093
+  pullPolicy: IfNotPresent
+
+command: []
+args:
+  - -m
+  - /models/$(MODEL_NAME)
+  - --host
+  - "0.0.0.0"
+  - --port
+  - "8080"
+  - -c
+  - "4096"
+  - -ngl
+  - "99"
+
+model:
+  name: ""
+  volumeSize: 50Gi
+  seedImage: ""
+  seedImagePullPolicy: IfNotPresent
+  seedCommand: []
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 16Gi
+  requests:
+    cpu: "4"
+    memory: 8Gi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 90
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  failureThreshold: 60
+
+replicaCount: 1
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+persistenceRWX:
+  enabled: true
+  storageClass: longhorn-rwx
+  accessMode: ReadWriteMany
+  size: 50Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+topologySpreadConstraints: []

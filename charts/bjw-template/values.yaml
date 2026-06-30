@@ -1,0 +1,44 @@
+global:
+  namespace: model-serving
+  securityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+  imageRegistry: ""
+  storageClass: longhorn
+
+serviceAccount:
+  create: true
+  name: ""
+
+model:
+  name: ""
+  volumeSize: 50Gi
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+persistenceRWX:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteMany
+  size: 50Gi
+
+livenessProbe:
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+startupProbe:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 60
+
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+commonLabels: {}
+commonAnnotations: {}

@@ -1,0 +1,19 @@
+engine:
+  type: onnxGenai
+  onnxGenai:
+    image:
+      repository: ghcr.io/microsoft/onnxruntime-genai
+      tag: latest
+      pullPolicy: IfNotPresent
+    args:
+      - --model_path
+      - /models/$(MODEL_NAME)
+      - --port
+      - "8080"
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: 16Gi
+      requests:
+        cpu: "4"
+        memory: 8Gi

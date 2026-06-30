@@ -1,0 +1,18 @@
+apiVersion: v2
+name: model-serving-engine
+description: Helm chart for serving ML models with vLLM, llama.cpp, or ONNX Runtime GenAI
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: onnx-ai-helm
+home: https://github.com/onnx-ai/onnx-ai-helm
+sources:
+  - https://github.com/onnx-ai/onnx-ai-helm
+keywords:
+  - ml
+  - inference
+  - vllm
+  - llama-cpp
+  - onnx
+  - gpu

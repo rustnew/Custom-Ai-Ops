@@ -1,0 +1,12 @@
+apiVersion: v2
+name: model-serving-triton
+description: Helm chart for serving ONNX/TensorRT-LLM/multi-framework models with Triton Inference Server
+type: application
+version: 0.1.0
+appVersion: "24.08"
+dependencies:
+  - name: bjw-template
+    version: "0.1.0"
+    repository: "file://../bjw-template"
+maintainers:
+  - name: onnx-ai-helm

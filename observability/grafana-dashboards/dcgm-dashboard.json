@@ -1,0 +1,132 @@
+{
+  "dashboard": {
+    "title": "DCGM GPU Dashboard",
+    "tags": ["dcgm", "gpu", "nvidia"],
+    "timezone": "utc",
+    "panels": [
+      {
+        "title": "GPU Utilization (%)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_GPU_UTIL",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        }
+      },
+      {
+        "title": "GPU Memory Usage (%)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL * 100",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 80, "color": "yellow" },
+                { "value": 95, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "GPU Temperature (°C)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_GPU_TEMP",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 70, "color": "yellow" },
+                { "value": 85, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "GPU Power Draw (W)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_POWER_USAGE",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "watt"
+          }
+        }
+      },
+      {
+        "title": "ECC Errors (Corrected)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 12, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "expr": "increase(DCGM_FI_DEV_ECC_ERRORS{error_type=\"corrected\"}[1h])",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 50, "color": "yellow" },
+                { "value": 100, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "SM Clock Frequency (MHz)",
+        "type": "timeseries",
+        "gridPos": { "h": 4, "w": 12, "x": 12, "y": 16 },
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_SM_CLOCK",
+            "legendFormat": "{{gpu}} {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MHz"
+          }
+        }
+      }
+    ]
+  }
+}

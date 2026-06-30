@@ -1,0 +1,17 @@
+[package]
+name = "model-onboarding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI scaffold tool for onboarding a new ML model with chart, docs, and registry entry"
+
+[[bin]]
+name = "model-onboarding"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

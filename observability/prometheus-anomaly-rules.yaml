@@ -1,0 +1,139 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: model-serving-anomaly-rules
+  namespace: monitoring
+  labels:
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+    - name: model-serving.latency
+      rules:
+        - alert: ModelServingHighLatency
+          expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="model-serving-engine",namespace="model-serving-prod"}[5m])) by (le)) > 2.0
+          for: 3m
+          labels:
+            severity: warning
+            component: model-serving
+          annotations:
+            summary: "Model serving p95 latency exceeds 2s"
+            description: "The 95th percentile latency for model serving is {{ $value }}s, exceeding the 2s threshold."
+
+        - alert: ModelServingCriticalLatency
+          expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job="model-serving-engine",namespace="model-serving-prod"}[5m])) by (le)) > 5.0
+          for: 2m
+          labels:
+            severity: critical
+            component: model-serving
+          annotations:
+            summary: "Model serving p99 latency exceeds 5s"
+            description: "The 99th percentile latency for model serving is {{ $value }}s, exceeding the 5s threshold. Failover should trigger."
+
+    - name: model-serving.errors
+      rules:
+        - alert: ModelServingHighErrorRate
+          expr: sum(rate(http_requests_total{job="model-serving-engine",namespace="model-serving-prod",code=~"5.."}[5m])) / sum(rate(http_requests_total{job="model-serving-engine",namespace="model-serving-prod"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            component: model-serving
+          annotations:
+            summary: "Model serving error rate above 5%"
+            description: "The 5xx error rate is {{ $value | humanizePercentage }}, exceeding the 5% threshold."
+
+        - alert: ModelServingCriticalErrorRate
+          expr: sum(rate(http_requests_total{job="model-serving-engine",namespace="model-serving-prod",code=~"5.."}[5m])) / sum(rate(http_requests_total{job="model-serving-engine",namespace="model-serving-prod"}[5m])) > 0.15
+          for: 3m
+          labels:
+            severity: critical
+            component: model-serving
+          annotations:
+            summary: "Model serving error rate above 15%"
+            description: "The 5xx error rate is {{ $value | humanizePercentage }}, exceeding the 15% threshold. Auto-rollback recommended."
+
+    - name: model-serving.gpu
+      rules:
+        - alert: GPUThermalThrottle
+          expr: DCGM_FI_DEV_GPU_TEMP > 85
+          for: 5m
+          labels:
+            severity: warning
+            component: gpu
+          annotations:
+            summary: "GPU thermal throttle imminent"
+            description: "GPU {{ $labels.gpu }} on {{ $labels.instance }} is at {{ $value }}°C, approaching throttle threshold."
+
+        - alert: GPUUtilizationLow
+          expr: DCGM_FI_DEV_GPU_UTIL < 10
+          for: 30m
+          labels:
+            severity: info
+            component: gpu
+          annotations:
+            summary: "GPU utilization below 10%"
+            description: "GPU {{ $labels.gpu }} on {{ $labels.instance }} has been below 10% utilization for 30 minutes. Consider scaling down."
+
+        - alert: GPUMemoryNearExhaustion
+          expr: DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL > 0.95
+          for: 2m
+          labels:
+            severity: critical
+            component: gpu
+          annotations:
+            summary: "GPU memory above 95%"
+            description: "GPU {{ $labels.gpu }} memory usage is at {{ $value | humanizePercentage }}."
+
+        - alert: GPUEccErrors
+          expr: increase(DCGM_FI_DEV_ECC_ERRORS{error_type="corrected"}[1h]) > 100
+          for: 5m
+          labels:
+            severity: warning
+            component: gpu
+          annotations:
+            summary: "High GPU ECC error rate"
+            description: "GPU {{ $labels.gpu }} has {{ $value }} corrected ECC errors in the last hour."
+
+    - name: model-serving.pods
+      rules:
+        - alert: ModelServingPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="model-serving-prod"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            component: model-serving
+          annotations:
+            summary: "Model serving pod restarting repeatedly"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour."
+
+        - alert: ModelServingPodNotReady
+          expr: kube_pod_container_status_ready{namespace="model-serving-prod"} == 0
+          for: 10m
+          labels:
+            severity: critical
+            component: model-serving
+          annotations:
+            summary: "Model serving pod not ready for 10m"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been not ready for 10 minutes."
+
+    - name: model-serving.anomaly
+      rules:
+        - alert: ModelServingLatencyAnomaly
+          expr: deriv(http_request_duration_seconds{job="model-serving-engine",namespace="model-serving-prod",quantile="0.95"}[30m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: model-serving
+          annotations:
+            summary: "Model serving latency increasing anomalously"
+            description: "The rate of change of p95 latency is {{ $value }}s/s, indicating an upward anomaly."
+
+        - alert: ModelServingThroughputAnomaly
+          expr: deriv(sum(rate(http_requests_total{job="model-serving-engine",namespace="model-serving-prod"}[5m]))[30m]) < -0.5
+          for: 10m
+          labels:
+            severity: warning
+            component: model-serving
+          annotations:
+            summary: "Model serving throughput dropping anomalously"
+            description: "Request throughput is declining at {{ $value }} req/s/s, indicating a potential issue."

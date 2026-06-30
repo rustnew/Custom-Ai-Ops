@@ -1,0 +1,21 @@
+{{- if .Values.persistenceRWX.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "model-serving-engine.fullname" . }}-rwx
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "model-serving-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: model-storage
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  accessModes:
+    - {{ .Values.persistenceRWX.accessMode }}
+  {{- if .Values.persistenceRWX.storageClass }}
+  storageClassName: {{ .Values.persistenceRWX.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistenceRWX.size }}
+{{- end }}

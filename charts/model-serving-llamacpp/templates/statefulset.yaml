@@ -1,0 +1,100 @@
+{{- include "bjw-template.labels" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bjw-template.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "bjw-template.labels" . | nindent 4 }}
+    engine-type: llamacpp
+  annotations:
+    {{- include "bjw-template.annotations" . | nindent 4 }}
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  serviceName: {{ include "bjw-template.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bjw-template.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bjw-template.selectorLabels" . | nindent 8 }}
+        engine-type: llamacpp
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bjw-template.serviceAccountName" . }}
+      securityContext:
+        {{- include "bjw-template.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 300
+      initContainers:
+        {{- if and .Values.model.seedImage .Values.model.seedCommand }}
+        - name: model-seed
+          image: {{ .Values.model.seedImage }}
+          imagePullPolicy: {{ .Values.model.seedImagePullPolicy }}
+          command:
+            {{- toYaml .Values.model.seedCommand | nindent 12 }}
+          volumeMounts:
+            - name: model-storage
+              mountPath: /models
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+        {{- end }}
+      containers:
+        - name: llamacpp
+          securityContext:
+            {{- include "bjw-template.securityContext" . | nindent 12 }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.command }}
+          command:
+            {{- toYaml .Values.command | nindent 12 }}
+          {{- end }}
+          args:
+            {{- toYaml .Values.args | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- include "bjw-template.commonEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "bjw-template.volumeMounts" . | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+      volumes:
+        {{- include "bjw-template.volumes" . | nindent 8 }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: model-storage
+        labels:
+          {{- include "bjw-template.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}

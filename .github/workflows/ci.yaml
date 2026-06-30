@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-tools:
+    name: Build & Test Rust Tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build engine-selector
+        run: cargo build --release -p engine-selector
+      - name: Build vram-budget-calc
+        run: cargo build --release -p vram-budget-calc
+      - name: Build model-onboarding
+        run: cargo build --release -p model-onboarding
+      - name: Test engine-selector
+        run: cargo test -p engine-selector
+      - name: Test vram-budget-calc
+        run: cargo test -p vram-budget-calc
+      - name: Test model-onboarding
+        run: cargo test -p model-onboarding
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+  helm-lint:
+    name: Helm Lint All Charts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14"
+      - name: Lint bjw-template
+        run: helm lint charts/bjw-template
+      - name: Lint model-serving-llamacpp
+        run: helm lint charts/model-serving-llamacpp
+      - name: Lint model-serving-vllm
+        run: helm lint charts/model-serving-vllm
+      - name: Lint model-serving-onnx-rust
+        run: helm lint charts/model-serving-onnx-rust
+      - name: Lint model-serving-triton
+        run: helm lint charts/model-serving-triton
+      - name: Lint model-serving-rayserve
+        run: helm lint charts/model-serving-rayserve
+      - name: Lint model-serving-engine
+        run: helm lint charts/model-serving-engine
+      - name: Lint ai-gateway
+        run: helm lint charts/ai-gateway
+      - name: Template dry-run all charts
+        run: |
+          for chart in charts/model-serving-llamacpp charts/model-serving-vllm charts/model-serving-onnx-rust charts/model-serving-triton charts/model-serving-rayserve charts/ai-gateway; do
+            helm template test-release "$chart" --set model.name=test-model > /dev/null
+          done
+
+  registry-consistency:
+    name: Registry Consistency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate registry.yaml
+        run: |
+          python3 -c "
+          import yaml, sys, os
+          reg = yaml.safe_load(open('models/registry.yaml'))
+          errors = []
+          for m in reg.get('models', []):
+              chart_dir = f\"charts/{m['chart']}\"
+              if not os.path.isdir(chart_dir):
+                  errors.append(f\"Missing chart directory: {chart_dir} for model {m['name']}\")
+              model_dir = f\"models/{m['name']}\"
+              if not os.path.isdir(model_dir):
+                  errors.append(f\"Missing model directory: {model_dir}\")
+              else:
+                  for f in ['model.md', 'budget.md', 'eval-report.md']:
+                      if not os.path.isfile(f\"{model_dir}/{f}\"):
+                          errors.append(f\"Missing {model_dir}/{f} for model {m['name']}\")
+          if errors:
+              for e in errors:
+                  print(e, file=sys.stderr)
+              sys.exit(1)
+          print('Registry consistency check passed')
+          "
+
+  vram-budget-validation:
+    name: VRAM Budget Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build vram-budget-calc
+        run: cargo build --release -p vram-budget-calc
+      - name: Validate VRAM budgets from registry
+        run: |
+          python3 -c "
+          import yaml, subprocess, sys
+          reg = yaml.safe_load(open('models/registry.yaml'))
+          for m in reg.get('models', []):
+              if m.get('status') in ('LIVE', 'STAGED'):
+                  result = subprocess.run(
+                      ['./target/release/vram-budget-calc',
+                       '-V', str(m['vram_budget_gb']),
+                       '--model-size', '4.7',
+                       '--quant', m.get('quantisation', 'fp16'),
+                       '--gpu', m.get('gpu_pool', 'unknown'),
+                       '--json'],
+                      capture_output=True
+                  )
+                  if result.returncode != 0:
+                      print(f'FAIL: {m[\"name\"]} — VRAM budget exceeded', file=sys.stderr)
+                      sys.exit(1)
+                  print(f'OK: {m[\"name\"]}')
+          "

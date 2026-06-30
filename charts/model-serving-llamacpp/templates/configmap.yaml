@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bjw-template.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "bjw-template.labels" . | nindent 4 }}
+data:
+  ENGINE_TYPE: "llamacpp"
+  MODEL_NAME: {{ .Values.model.name | quote }}
+  LLAMACPP_HOST: "0.0.0.0"
+  LLAMACPP_PORT: {{ .Values.service.targetPort | quote }}

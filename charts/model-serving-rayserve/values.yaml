@@ -1,0 +1,100 @@
+global:
+  namespace: model-serving
+
+engine:
+  type: rayserve
+
+image:
+  repository: rayproject/ray
+  tag: "2.38.0-cpu"
+  pullPolicy: IfNotPresent
+
+gpuImage:
+  repository: rayproject/ray
+  tag: "2.38.0-gpu"
+
+command: []
+args:
+  - serve
+  - run
+  - /models/$(MODEL_NAME)/serve_config.yaml
+  - --host=0.0.0.0
+  - --port=8000
+
+model:
+  name: ""
+  volumeSize: 50Gi
+  seedImage: ""
+  seedImagePullPolicy: IfNotPresent
+  seedCommand: []
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+rayDashboard:
+  enabled: true
+  port: 8265
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 32Gi
+  requests:
+    cpu: "4"
+    memory: 16Gi
+
+livenessProbe:
+  httpGet:
+    path: /-/healthz
+    port: 8000
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+startupProbe:
+  httpGet:
+    path: /-/healthz
+    port: 8000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 90
+
+replicaCount: 1
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+persistenceRWX:
+  enabled: true
+  storageClass: longhorn-rwx
+  accessMode: ReadWriteMany
+  size: 50Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+topologySpreadConstraints: []
+
+note: "This chart is for transitional use before model conversion to an optimized format. See docs/architecture/01-formats-and-engines.md for conversion guidance."

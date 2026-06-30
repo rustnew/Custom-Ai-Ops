@@ -1,0 +1,43 @@
+{{- if .Values.gateway }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "ai-gateway.fullname" . }}
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: https
+  hostnames:
+    - {{ .Values.gateway.hostname }}
+  rules:
+    {{- range .Values.models }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1/chat/completions
+          headers:
+            - type: Exact
+              name: x-model
+              value: {{ .name }}
+      backendRefs:
+        {{- range .backends }}
+        - name: {{ .ref }}
+          port: 80
+          weight: {{ .weight | default 100 }}
+        {{- end }}
+        {{- if .fallback.enabled }}
+        - name: {{ .fallback.backendRef }}
+          port: 443
+          weight: 0
+        {{- end }}
+      timeouts:
+        request: "30s"
+        backendRequest: "25s"
+    {{- end }}
+{{- end }}
