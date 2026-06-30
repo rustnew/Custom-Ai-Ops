@@ -1,0 +1,130 @@
+# ONNX Runtime GenAI Engine Specific Values
+# Custom Rust server for ONNX model serving
+
+apiVersion: v2
+name: model-serving-onnx-rust
+description: Custom Rust ONNX Runtime GenAI server
+type: application
+version: 1.0.0
+appVersion: "latest"
+
+# Image configuration
+image:
+  repository: onnx-ai-helm/onnx-rust
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Model configuration
+model:
+  name: onnx-rust-model
+  huggingfaceRepo: onnx-ai-helm/onnx-example
+  filename: model.onnx
+  storageSize: 20Gi
+
+# Replicas
+replicas: 1
+
+# Node selector for GPU scheduling
+nodeSelector:
+  nvidia.com/gpu: "true"
+
+# Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - model-serving-onnx-rust
+          topologyKey: kubernetes.io/hostname
+
+# API Key for authentication
+apiKey: change-me
+
+# Database configuration
+db:
+  username: postgres
+  password: change-me
+
+# Container configuration
+container:
+  port: 8080
+  grpcPort: 50051
+
+# Probe configurations
+probes:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
+  readiness:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  startup:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+
+# Resource requirements
+resources:
+  requests:
+    cpu: 2000m
+    memory: 8Gi
+    nvidiaCompu: 1
+  limits:
+    cpu: 4000m
+    memory: 16Gi
+    nvidiaCompu: 1
+
+# Storage configuration
+storageClassName: longhorn
+
+# Ingress configuration
+ingressClassName: nginx
+
+# ONNX Runtime GenAI specific container arguments
+containerArgs:
+  - --model-path
+  - /models/onnx-rust-model/model.onnx
+  - --session-config
+  - 'optimal'
+
+# ONNX Runtime GenAI specific probe configuration
+probes:
+  liveness:
+    tcpSocket:
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 60
+  startup:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  readiness:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30

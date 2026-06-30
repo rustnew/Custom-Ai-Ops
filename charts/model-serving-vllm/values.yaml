@@ -1,0 +1,131 @@
+# vLLM Engine Specific Values
+# Safetensors/AWQ/GPTQ format support
+
+apiVersion: v2
+name: model-serving-vllm
+description: vLLM engine for high-throughput LLM serving
+type: application
+version: 1.0.0
+appVersion: "latest"
+
+# Image configuration
+image:
+  repository: onnx-ai-helm/vllm
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Model configuration
+model:
+  name: vllm-model
+  huggingfaceRepo: onnx-ai-helm/vllm-example
+  filename: model.safetensors
+  storageSize: 100Gi
+
+# Replicas
+replicas: 2
+
+# Node selector for GPU scheduling
+nodeSelector:
+  nvidia.com/gpu: "true"
+
+# Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - model-serving-vllm
+          topologyKey: kubernetes.io/hostname
+
+# API Key for authentication
+apiKey: change-me
+
+# Database configuration
+db:
+  username: postgres
+  password: change-me
+
+# Container configuration
+container:
+  port: 8080
+  grpcPort: 50051
+
+# Probe configurations
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  readiness:
+    initialDelaySeconds: 180
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  startup:
+    initialDelaySeconds: 180
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 180
+
+# Resource requirements
+resources:
+  requests:
+    cpu: 4000m
+    memory: 24Gi
+    nvidiaCompu: 1
+  limits:
+    cpu: 8000m
+    memory: 48Gi
+    nvidiaCompu: 1
+
+# Storage configuration
+storageClassName: longhorn
+
+# Ingress configuration
+ingressClassName: nginx
+
+# vLLM specific container arguments
+containerArgs:
+  - --model
+  - /models/vllm-model/model.safetensors
+  - --max-model-len 8192
+  - --gpu-memory-utilization 0.90
+  - --trust-remote-code false
+
+# vLLM specific probe configuration
+probes:
+  liveness:
+    tcpSocket:
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  startup:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 180
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 180
+  readiness:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 180
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30

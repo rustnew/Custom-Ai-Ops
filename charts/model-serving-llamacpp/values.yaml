@@ -1,0 +1,130 @@
+# llama.cpp Engine Specific Values
+# GGUF format support
+
+apiVersion: v2
+name: model-serving-llamacpp
+description: llama.cpp engine for GGUF model serving
+type: application
+version: 1.0.0
+appVersion: "latest"
+
+# Image configuration
+image:
+  repository: onnx-ai-helm/llama-cpp
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Model configuration
+model:
+  name: llama-cpp-model
+  huggingfaceRepo: onnx-ai-helm/llama-cpp-example
+  filename: model.gguf
+  storageSize: 50Gi
+
+# Replicas
+replicas: 2
+
+# Node selector for GPU scheduling
+nodeSelector:
+  nvidia.com/gpu: "true"
+
+# Tolerations for GPU nodes
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - model-serving-llamacpp
+          topologyKey: kubernetes.io/hostname
+
+# API Key for authentication
+apiKey: change-me
+
+# Database configuration
+db:
+  username: postgres
+  password: change-me
+
+# Container configuration
+container:
+  port: 8080
+  grpcPort: 50051
+
+# Probe configurations
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  readiness:
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+  startup:
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+
+# Resource requirements
+resources:
+  requests:
+    cpu: 4000m
+    memory: 16Gi
+    nvidiaCompu: 1
+  limits:
+    cpu: 8000m
+    memory: 32Gi
+    nvidiaCompu: 1
+
+# Storage configuration
+storageClassName: longhorn
+
+# Ingress configuration
+ingressClassName: nginx
+
+# llama.cpp specific container arguments
+containerArgs:
+  - --gguf
+  - --context-length 8192
+  - --batch-size 4
+  - --n-gpu-layers -1
+
+# llama.cpp specific probe configuration
+probes:
+  liveness:
+    tcpSocket:
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  startup:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 120
+  readiness:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
