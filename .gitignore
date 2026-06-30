@@ -1,0 +1,33 @@
+# Git Ignore for onnx-ai-helm
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Helm values overrides
+environments/*/values/*.yaml
+
+# Test artifacts
+coverage/
+*.coverage
+htmlcov/
+
+# Docker images
+*.tar
+*.tar.gz

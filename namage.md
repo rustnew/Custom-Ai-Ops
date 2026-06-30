@@ -1,5 +1,9 @@
 # Deployment, Orchestration, and ML Model Production Management
 
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
 ## Document Objective
 
 Master the complete lifecycle of a model in production: from packaging to serving millions of clients, passing through Kubernetes orchestration, fine-grained GPU management, autoscaling, and model-specific problems (LLM, vision, audio, multimodal, recommendation).

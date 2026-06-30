@@ -1,5 +1,9 @@
 # Ultimate Reference Architecture — Cloud-Scale Multi-Format ML Model Serving Platform
 
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
 ## Objective
 
 Define the most robust, modular, and durable project structure possible for deploying ML models (all formats) on the cloud, capable of serving millions of users, with self-healing, load forecasting, and long-term resilience (years, not months). This document synthesizes and extends the existing pattern (StatefulSet bjw-template + ArgoCD + Envoy AI Gateway + sync waves) into a generalized, multi-engine, multi-format system.
