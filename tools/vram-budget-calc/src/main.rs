@@ -1,275 +1,262 @@
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+use anyhow::{anyhow, Result};
+use clap::Parser;
+use serde::Serialize;
+use std::fmt;
 
-/// VRAM Budget Calculator - Validates VRAM requirements before deployment
-/// 
-/// Formula: Usable VRAM Budget = Total VRAM * util_factor (0.90) - Model Size - 1GB Fixed Overhead - [2 * Batch * Context * Layers * Heads * Bytes]
-/// 
-/// Strict rules:
-/// - Block compilation if available VRAM is negative
-/// - Reject FP8 checkpoints on Ampere architectures (like local RTX A2000)
+const VRAM_UTILIZATION_FACTOR: f64 = 0.90;
+const FIXED_OVERHEAD_GB: f64 = 1.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuantFormat {
+    Fp32,
+    Fp16,
+    Bf16,
+    Fp8,
+    Int8,
+    Int4,
+    Q4KM,
+}
+
+impl fmt::Display for QuantFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            QuantFormat::Fp32 => write!(f, "fp32"),
+            QuantFormat::Fp16 => write!(f, "fp16"),
+            QuantFormat::Bf16 => write!(f, "bf16"),
+            QuantFormat::Fp8 => write!(f, "fp8"),
+            QuantFormat::Int8 => write!(f, "int8"),
+            QuantFormat::Int4 => write!(f, "int4"),
+            QuantFormat::Q4KM => write!(f, "q4_km"),
+        }
+    }
+}
+
+impl QuantFormat {
+    fn bytes_per_weight(&self) -> f64 {
+        match self {
+            QuantFormat::Fp32 => 4.0,
+            QuantFormat::Fp16 => 2.0,
+            QuantFormat::Bf16 => 2.0,
+            QuantFormat::Fp8 => 1.0,
+            QuantFormat::Int8 => 1.0,
+            QuantFormat::Int4 => 0.5,
+            QuantFormat::Q4KM => 0.55,
+        }
+    }
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "fp32" => Ok(QuantFormat::Fp32),
+            "fp16" => Ok(QuantFormat::Fp16),
+            "bf16" => Ok(QuantFormat::Bf16),
+            "fp8" => Ok(QuantFormat::Fp8),
+            "int8" => Ok(QuantFormat::Int8),
+            "int4" => Ok(QuantFormat::Int4),
+            "q4_km" | "q4km" | "q4-km" => Ok(QuantFormat::Q4KM),
+            _ => Err(anyhow!("unsupported quantization format: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GpuArch {
+    Ampere,
+    Ada,
+    Hopper,
+    Blackwell,
+    Other,
+}
+
+impl fmt::Display for GpuArch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GpuArch::Ampere => write!(f, "Ampere"),
+            GpuArch::Ada => write!(f, "Ada Lovelace"),
+            GpuArch::Hopper => write!(f, "Hopper"),
+            GpuArch::Blackwell => write!(f, "Blackwell"),
+            GpuArch::Other => write!(f, "Other"),
+        }
+    }
+}
+
+impl GpuArch {
+    fn supports_fp8(&self) -> bool {
+        matches!(self, GpuArch::Ada | GpuArch::Hopper | GpuArch::Blackwell)
+    }
+
+    fn from_gpu_name(name: &str) -> Self {
+        let lower = name.to_lowercase();
+        if lower.contains("a100") || lower.contains("a2000") || lower.contains("a4000")
+            || lower.contains("a4500") || lower.contains("a5000") || lower.contains("a6000")
+            || lower.contains("rtx 30") || lower.contains("rtx a")
+            || lower.contains("a10") || lower.contains("a16") || lower.contains("a30")
+            || lower.contains("a40")
+        {
+            GpuArch::Ampere
+        } else if lower.contains("rtx 40") || lower.contains("l4") || lower.contains("l40") {
+            GpuArch::Ada
+        } else if lower.contains("h100") || lower.contains("h200") || lower.contains("hgx") {
+            GpuArch::Hopper
+        } else if lower.contains("b100") || lower.contains("b200") || lower.contains("b200") {
+            GpuArch::Blackwell
+        } else {
+            GpuArch::Other
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct VramBudget {
+    total_vram_gb: f64,
+    usable_vram_gb: f64,
+    model_size_gb: f64,
+    fixed_overhead_gb: f64,
+    kv_cache_budget_gb: f64,
+    remaining_gb: f64,
+    fits: bool,
+    warnings: Vec<String>,
+    quantization: String,
+    gpu_arch: String,
+}
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    name = "vram-budget-calc",
+    version,
+    about = "Calculates whether a model fits within GPU VRAM constraints",
+    long_about = None
+)]
 struct Cli {
-    /// Model configuration JSON file
-    #[arg(short, long)]
-    config: PathBuf,
+    #[arg(
+        short = 'V',
+        long,
+        help = "Total VRAM of the GPU in GB",
+        value_name = "GB"
+    )]
+    total_vram: f64,
 
-    /// Total VRAM available in GB
-    #[arg(short, long)]
-    total_vram_gb: f64,
+    #[arg(short, long, help = "Model size in GB", value_name = "GB")]
+    model_size: f64,
 
-    /// GPU architecture (Ampere, Hopper, H100, etc.)
-    #[arg(short, long)]
-    gpu_architecture: String,
+    #[arg(short, long, help = "Quantization format (fp32, fp16, bf16, fp8, int8, int4, q4_km)")]
+    quant: String,
 
-    /// Batch size for inference
-    #[arg(short, long)]
-    batch_size: Option<u32>,
+    #[arg(short = 'g', long, help = "GPU name for architecture detection (e.g. 'RTX A2000')")]
+    gpu: Option<String>,
 
-    /// Context length
-    #[arg(short, long)]
-    context_length: Option<u32>,
+    #[arg(long, help = "Batch size for KV cache calculation", default_value_t = 1)]
+    batch: u32,
 
-    /// Number of transformer layers
-    #[arg(short, long)]
-    layers: Option<u32>,
+    #[arg(long, help = "Context length for KV cache calculation", default_value_t = 4096)]
+    context: u32,
 
-    /// Hidden dimension size
-    #[arg(short, long)]
-    hidden_size: Option<u32>,
-
-    /// Head dimension size
-    #[arg(short, long)]
-    head_dim: Option<u32>,
-
-    /// Quantization bits (4, 8, 16, 32)
-    #[arg(short, long)]
-    quantization_bits: Option<u8>,
-
-    /// Output report file
-    #[arg(short, long)]
-    output: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ModelConfig {
-    name: String,
-    format: String,
-    size_gb: f64,
+    #[arg(long, help = "Number of transformer layers")]
     layers: u32,
-    hidden_size: u32,
-    vocab_size: u32,
-    head_dim: u32,
-    quantization_bits: Option<u8>,
-    rope_scaling: Option<String>,
-    attention_types: Option<String>,
+
+    #[arg(long, help = "Number of attention heads")]
+    heads: u32,
+
+    #[arg(
+        long,
+        help = "Output budget as JSON for pipeline integration",
+        default_value_t = false
+    )]
+    json: bool,
 }
 
-fn parse_model_config(config_path: &PathBuf) -> Result<ModelConfig> {
-    let content = fs::read_to_string(config_path)
-        .context("Failed to read model config file")?;
-    
-    let config: ModelConfig = serde_json::from_str(&content)
-        .context("Failed to parse model config JSON")?;
-    
-    Ok(config)
-}
-
-fn calculate_kv_cache_memory(
-    batch_size: u32,
-    context_length: u32,
-    layers: u32,
-    hidden_size: u32,
-    head_dim: u32,
-    quantization_bits: Option<u8>,
-) -> f64 {
-    let quantization_factor = quantization_bits.map_or(1.0, |b| {
-        match b {
-            4 => 0.25,
-            8 => 0.5,
-            16 => 1.0,
-            _ => 1.0,
-        }
-    });
-
-    // KV cache: 2 * batch * context * layers * heads * bytes_per_token
-    let bytes_per_token = head_dim as f64 * 2.0 * quantization_factor; // 2 for K and V projections
-    
-    let kv_cache_bytes = 2.0 * batch_size as f64 * context_length as f64 * layers as f64 * head_dim as f64 * 2.0 * quantization_factor;
-    kv_cache_bytes / (1024.0 * 1024.0 * 1024.0) // Convert to GB
-}
-
-fn calculate_model_memory(size_gb: f64, quantization_bits: Option<u8>) -> f64 {
-    let quantization_factor = quantization_bits.map_or(1.0, |b| {
-        match b {
-            4 => 0.25,
-            8 => 0.5,
-            16 => 1.0,
-            _ => 1.0,
-        }
-    });
-    
-    size_gb * quantization_factor
-}
-
-fn check_fp8_compatibility(gpu_architecture: &str, quantization_bits: Option<u8>) -> Result<()> {
-    let arch_upper = gpu_architecture.to_uppercase();
-    
-    // FP8 requires Hopper (H100) or Ampere (A100) with FP8 support
-    let has_fp8_support = arch_upper.contains("HOPPER") || 
-                          (arch_upper.contains("AMPERE") && quantization_bits.map_or(false, |b| b == 8));
-    
-    if quantization_bits == Some(8) && !has_fp8_support {
-        anyhow::bail!(
-            "FP8 quantization rejected on {} architecture. \
-             FP8 requires Hopper (H100) or Ampere with FP8 support. \
-             Falling back to FP16 (16-bit quantization).",
-            gpu_architecture
-        );
-    }
-    
-    Ok(())
-}
-
-fn calculate_vram_budget(
-    config: &ModelConfig,
-    total_vram_gb: f64,
-    batch_size: Option<u32>,
-    gpu_architecture: &str,
-) -> Result<VramBudgetReport> {
-    let quantization_bits = config.quantization_bits;
-    
-    // Check FP8 compatibility
-    check_fp8_compatibility(gpu_architecture, quantization_bits)?;
-    
-    // Calculate model memory (with quantization)
-    let model_memory = calculate_model_memory(config.size_gb, quantization_bits);
-    
-    // Calculate KV cache memory
-    let batch_size = batch_size.unwrap_or(4);
-    let context_length = config.context_length.unwrap_or(8192);
-    let layers = config.layers;
-    let hidden_size = config.hidden_size;
-    let head_dim = config.head_dim;
-    
-    let kv_cache_memory = calculate_kv_cache_memory(batch_size, context_length, layers, hidden_size, head_dim, quantization_bits);
-    
-    // Apply formula: Usable VRAM Budget = Total VRAM * 0.90 - Model Size - 1GB Fixed Overhead - KV Cache
-    let util_factor = 0.90;
-    let fixed_overhead = 1.0; // 1GB fixed overhead
-    
-    let usable_vram = total_vram_gb * util_factor - model_memory - fixed_overhead - kv_cache_memory;
-    
-    // Check if budget is negative
-    if usable_vram < 0.0 {
-        anyhow::bail!(
-            "VRAM budget negative: {} GB total * {} - {} GB model - {} GB overhead - {} GB KV-cache = {} GB available",
-            total_vram_gb,
-            total_vram_gb * util_factor,
-            model_memory,
-            fixed_overhead,
-            kv_cache_memory,
-            usable_vram
-        );
-    }
-    
-    Ok(VramBudgetReport {
-        model_name: config.name.clone(),
-        total_vram_gb,
-        model_memory,
-        kv_cache_memory,
-        fixed_overhead,
-        usable_vram,
-        quantization_bits: quantization_bits.unwrap_or(16),
-        batch_size,
-        context_length,
-        layers,
-        hidden_size,
-        head_dim,
-        fp8_compatible: quantization_bits.map_or(false, |b| b == 8),
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct VramBudgetReport {
-    model_name: String,
-    total_vram_gb: f64,
-    model_memory: f64,
-    kv_cache_memory: f64,
-    fixed_overhead: f64,
-    usable_vram: f64,
-    quantization_bits: u8,
-    batch_size: u32,
-    context_length: u32,
-    layers: u32,
-    hidden_size: u32,
-    head_dim: u32,
-    fp8_compatible: bool,
-}
-
-fn generate_report(report: &VramBudgetReport) -> String {
-    let mut report_str = String::new();
-    
-    report_str.push_str("=== VRAM Budget Report ===\n\n");
-    report_str.push_str(&format!("Model: {}\n", report.model_name));
-    report_str.push_str(&format!("Total VRAM: {:.2} GB\n", report.total_vram_gb));
-    report_str.push_str(&format!("GPU Architecture: {}\n", report.gpu_architecture));
-    report_str.push_str(&format!("Quantization: {} bits\n", report.quantization_bits));
-    report_str.push_str(&format!("Batch Size: {}\n", report.batch_size));
-    report_str.push_str(&format!("Context Length: {}\n", report.context_length));
-    report_str.push_str(&format!("Layers: {}\n", report.layers));
-    report_str.push_str(&format!("Hidden Size: {}\n", report.hidden_size));
-    report_str.push_str(&format!("Head Dim: {}\n", report.head_dim));
-    report_str.push_str(&format!("FP8 Compatible: {}\n", report.fp8_compatible));
-    report_str.push_str("\n--- Memory Breakdown ---\n");
-    report_str.push_str(&format!("Model Memory (with quantization): {:.2} GB\n", report.model_memory));
-    report_str.push_str(&format!("KV Cache Memory: {:.2} GB\n", report.kv_cache_memory));
-    report_str.push_str(&format!("Fixed Overhead: {:.2} GB\n", report.fixed_overhead));
-    report_str.push_str(&format!("Usable VRAM Budget: {:.2} GB\n", report.usable_vram));
-    report_str.push_str(&format!("Utilization Factor: {:.0}%\n", report.total_vram_gb * 0.90));
-    
-    if report.usable_vram < 4.0 {
-        report_str.push_str("\n⚠️  WARNING: Low VRAM budget! Consider reducing batch size or context length.\n");
-    }
-    
-    report_str
+fn calculate_kv_cache_gb(batch: u32, context: u32, layers: u32, heads: u32, bytes_per_elem: f64) -> f64 {
+    let b = batch as f64;
+    let s = context as f64;
+    let l = layers as f64;
+    let h = heads as f64;
+    let byt = bytes_per_elem;
+    2.0 * b * s * l * h * byt / (1024.0 * 1024.0 * 1024.0)
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
-    // Parse model config
-    let config = parse_model_config(&cli.config)?;
-    
-    // Calculate VRAM budget
-    let report = calculate_vram_budget(
-        &config,
-        cli.total_vram_gb,
-        Some(cli.batch_size),
-        &cli.gpu_architecture,
-    )?;
-    
-    // Generate report
-    let report_str = generate_report(&report);
-    
-    // Output to stdout
-    println!("{}", report_str);
-    
-    // Write to file if requested
-    if let Some(output_path) = cli.output {
-        fs::write(&output_path, report_str)?;
-        println!("\nReport written to: {}", output_path.display());
+
+    let quant = QuantFormat::from_str(&cli.quant)?;
+    let gpu_arch = cli
+        .gpu
+        .as_deref()
+        .map(|name| GpuArch::from_gpu_name(name))
+        .unwrap_or(GpuArch::Other);
+
+    let mut warnings = Vec::new();
+
+    if quant == QuantFormat::Fp8 && !gpu_arch.supports_fp8() {
+        return Err(anyhow!(
+            "FP8 quantization is not supported on {} GPUs. \
+             RTX A2000 and other Ampere GPUs lack FP8 Tensor Core support. \
+             Use fp16, bf16, int8, or int4 instead.",
+            gpu_arch
+        ));
     }
-    
-    // Exit with error code if FP8 not compatible
-    if !report.fp8_compatible && report.quantization_bits == Some(8) {
-        eprintln!("Note: FP8 quantization not compatible with {} architecture", report.gpu_architecture);
+
+    let usable_vram = cli.total_vram * VRAM_UTILIZATION_FACTOR;
+    let bytes_per_elem = quant.bytes_per_weight();
+    let kv_cache = if cli.layers > 0 && cli.heads > 0 {
+        calculate_kv_cache_gb(cli.batch, cli.context, cli.layers, cli.heads, bytes_per_elem)
+    } else {
+        0.0
+    };
+
+    let remaining = usable_vram - cli.model_size - FIXED_OVERHEAD_GB - kv_cache;
+
+    if remaining < 0.0 {
+        warnings.push(format!(
+            "Insufficient VRAM: need {:.2} GB but only {:.2} GB usable ( shortfall {:.2} GB )",
+            cli.model_size + FIXED_OVERHEAD_GB + kv_cache,
+            usable_vram,
+            -remaining
+        ));
     }
-    
+
+    if cli.total_vram <= 0.0 {
+        return Err(anyhow!("total VRAM must be positive"));
+    }
+
+    if cli.model_size < 0.0 {
+        return Err(anyhow!("model size cannot be negative"));
+    }
+
+    let budget = VramBudget {
+        total_vram_gb: cli.total_vram,
+        usable_vram_gb: usable_vram,
+        model_size_gb: cli.model_size,
+        fixed_overhead_gb: FIXED_OVERHEAD_GB,
+        kv_cache_budget_gb: kv_cache,
+        remaining_gb: remaining,
+        fits: remaining >= 0.0,
+        warnings,
+        quantization: quant.to_string(),
+        gpu_arch: gpu_arch.to_string(),
+    };
+
+    if cli.json {
+        println!("{}", serde_json::to_string_pretty(&budget)?);
+    } else {
+        println!("VRAM Budget Analysis");
+        println!("─────────────────────");
+        println!("Total VRAM        : {:.2} GB", budget.total_vram_gb);
+        println!("Usable VRAM (90%) : {:.2} GB", budget.usable_vram_gb);
+        println!("Model size ({:>4}) : {:.2} GB", budget.quantization, budget.model_size_gb);
+        println!("Fixed overhead    : {:.2} GB", budget.fixed_overhead_gb);
+        if budget.kv_cache_budget_gb > 0.0 {
+            println!("KV cache budget   : {:.2} GB", budget.kv_cache_budget_gb);
+        }
+        println!("─────────────────────");
+        println!("Remaining         : {:.2} GB", budget.remaining_gb);
+        println!("Fits on GPU       : {}", if budget.fits { "YES" } else { "NO" });
+        for w in &budget.warnings {
+            println!("WARNING: {}", w);
+        }
+    }
+
+    if !budget.fits {
+        std::process::exit(1);
+    }
+
     Ok(())
 }

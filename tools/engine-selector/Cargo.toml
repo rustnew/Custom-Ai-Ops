@@ -1,19 +1,17 @@
 [package]
 name = "engine-selector"
-version = "0.1.0"
-edition = "2021"
-authors = ["onnx-ai-helm contributors"]
-description = "Engine selection CLI for ML model serving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI that selects the optimal serving engine for a given ML model format"
+
+[[bin]]
+name = "engine-selector"
+path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_yaml = "0.9"
-thiserror = "1.0"
-anyhow = "1.0"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }

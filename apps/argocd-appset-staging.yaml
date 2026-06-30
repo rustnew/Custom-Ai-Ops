@@ -1,80 +1,47 @@
-# ArgoCD ApplicationSet for Staging Environment
-# Manages multiple model deployments with sync waves
-
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: ml-models-staging
+  name: model-serving-staging
   namespace: argocd
 spec:
   generators:
-    - json:
-        files:
-          - |
-            [
-              {
-                "name": "llama-cpp-model",
-                "engine": "llama-cpp",
-                "namespace": "ml-serving-staging",
-                "project": "default"
-              },
-              {
-                "name": "vllm-model",
-                "engine": "vllm",
-                "namespace": "ml-serving-staging",
-                "project": "default"
-              },
-              {
-                "name": "onnx-rust-model",
-                "engine": "onnx-rust",
-                "namespace": "ml-serving-staging",
-                "project": "default"
-              }
-            ]
+    - git:
+        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        revision: HEAD
+        directories:
+          - path: environments/staging
   template:
     metadata:
-      name: {{name}}
-      labels:
-        app.kubernetes.io/name: ml-models-staging
-        app.kubernetes.io/part-of: onnx-ai-helm
-        env: staging
+      name: '{{path.basename}}-staging'
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
     spec:
-      project: default
+      project: model-serving
       source:
-        repoURL: https://github.com/onnx-ai-helm/charts.git
-        targetRevision: main
-        path: charts/model-serving-{{engine}}
+        repoURL: https://github.com/onnx-ai/onnx-ai-helm.git
+        targetRevision: HEAD
+        path: charts/model-serving-engine
+        helm:
+          valueFiles:
+            - values.yaml
+            - ../../environments/staging/values.yaml
+          parameters:
+            - name: global.namespace
+              value: model-serving-staging
       destination:
-        server: https://kubernetes.staging.onnx-ai-helm.local
-        namespace: {{namespace}}
+        server: https://kubernetes.default.svc
+        namespace: model-serving-staging
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
-          allowEmpty: true
+          allowEmpty: false
         syncOptions:
           - CreateNamespace=true
-          - PrunePropagationPolicy=foreground
-          - PruneLast=true
-        # Sync waves
-        syncWaves:
-          - name: bootstrap-secrets
-            resources:
-              - name: namespace
-              - name: secret-api-keys
-            executeFirst: true
-          - name: storage
-            resources:
-              - name: pvc-model-storage
-          - name: gpu-collectors
-            resources:
-              - name: daemonset-dcgm
-              - name: deployment-prometheus
-          - name: model-server
-            resources:
-              - name: statefulset
-              - name: ingress
-          - name: post-sync-validation
-            resources:
-              - name: job-smoke-test
-            executeLast: true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 15s
+            factor: 2
+            maxDuration: 3m
