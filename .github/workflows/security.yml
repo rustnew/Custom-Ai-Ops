@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   scan:
-    uses: ADORSYS-GIS/ai-ops/.github/workflows/security-gates.yml@v1.2.0
+    uses: ADORSYS-GIS/ai-governance/.github/workflows/security-gates.yml@main
     secrets: inherit
     with:
       trivy-scan-type: 'config'
