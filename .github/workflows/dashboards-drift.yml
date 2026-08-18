@@ -32,7 +32,7 @@ jobs:
       - name: Install uv
         # v8.1.0 (2026-04-16). v4 reworked input names; `enable-cache` is set
         # explicitly here so the default change doesn't matter.
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
